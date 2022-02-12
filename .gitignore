@@ -102,3 +102,6 @@ dist
 
 # TernJS port file
 .tern-port
+
+#All html downloaded by the application
+html-downloaded/
