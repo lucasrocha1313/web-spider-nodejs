@@ -2,22 +2,26 @@ import fs from 'fs'
 import path from 'path'
 import superagent from 'superagent'
 import mkdirp from 'mkdirp'
-import { urlToFilename } from './utils.js'
+import { urlToFilename, getPageLinks } from './utils.js'
 
-export function spider(url, cb) {
+export function spider(url, nesting, cb) {
     const filename = urlToFilename(url)
     const pathFilename = './html-downloaded/' + filename
-    fs.access(pathFilename, err => {
-        if (!err || err.code !== 'ENOENT') {
-            return cb(null, filename, false)
-
-        }
-        downloadFromUrl(url, filename, err => {
-            if (err) {
+    fs.readFile(pathFilename, 'utf8', (err, fileContent) => {
+        if (err) {
+            if (err.code !== 'ENOENT') {
                 return cb(err)
             }
-            cb(null, filename, true)
-        })
+
+            return downloadFromUrl(url, pathFilename, (err, requestContent) => {
+                if (err) {
+                    return cb(err)
+                }
+                spiderLinks(url, requestContent, nesting, cb)
+            })
+        }
+
+        spiderLinks(url, fileContent, nesting, cb)
     })
 }
 
@@ -34,8 +38,7 @@ const downloadFromUrl = (url, filename, cb) => {
             return cb(err)
         }
 
-        const pathFilename = './html-downloaded/' + filename
-        saveFile(pathFilename, res.text, err => {
+        saveFile(filename, res.text, err => {
             if (err) {
                 return cb(err)
             }
@@ -43,6 +46,34 @@ const downloadFromUrl = (url, filename, cb) => {
             cb(null, res.text)
         })
     })
+}
+
+const spiderLinks = (currentUrl, body, nesting, cb) => {
+    if (nesting === 0) {
+        return process.nextTick(cb)
+    }
+
+    const links = getPageLinks(currentUrl, body)
+
+    if (links.length === 0) {
+        return process.nextTick(cb)
+    }
+
+    function interate(index) {
+        if (index === links.length) {
+            return cb()
+        }
+
+        spider(links[index], nesting - 1, function (err) {
+            if (err) {
+                return cb(err)
+            }
+
+            interate(index + 1)
+        })
+    }
+
+    interate(0)
 }
 
 
