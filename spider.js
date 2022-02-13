@@ -4,7 +4,14 @@ import superagent from 'superagent'
 import mkdirp from 'mkdirp'
 import { urlToFilename, getPageLinks } from './utils.js'
 
+const spidering = new Set()
+
 export function spider(url, nesting, cb) {
+    if(spidering.has(url)) {
+        return process.nextTick(cb)
+    }
+    spidering.add(url)
+    
     const filename = urlToFilename(url)
     const pathFilename = './html-downloaded/' + filename
     fs.readFile(pathFilename, 'utf8', (err, fileContent) => {
