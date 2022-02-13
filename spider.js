@@ -59,21 +59,21 @@ const spiderLinks = (currentUrl, body, nesting, cb) => {
         return process.nextTick(cb)
     }
 
-    function interate(index) {
-        if (index === links.length) {
-            return cb()
+    let completed = 0
+    let hasErrors = false
+
+    function done(err) {
+        if(err) {
+            hasErrors = true
+            return cb(err)
         }
 
-        spider(links[index], nesting - 1, function (err) {
-            if (err) {
-                return cb(err)
-            }
-
-            interate(index + 1)
-        })
+        if(++completed === links.length && !hasErrors) {
+            return cb()
+        }
     }
 
-    interate(0)
+    links.forEach(link => spider(link, nesting-1, done))
 }
 
 
