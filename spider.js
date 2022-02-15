@@ -5,30 +5,41 @@ import mkdirp from 'mkdirp'
 import { urlToFilename, getPageLinks } from './utils.js'
 
 const spidering = new Set()
-
-export function spider(url, nesting, cb) {
+export function spider(url, nesting, queue) {
     if(spidering.has(url)) {
-        return process.nextTick(cb)
-    }
+        return
+    }    
     spidering.add(url)
+    
+    queue.pushTask((done) => {
+        spiderTask(url, nesting, queue, done)
+    })
+}
+
+export function spiderTask(url, nesting, queue, cb) {
     
     const filename = urlToFilename(url)
     const pathFilename = './html-downloaded/' + filename
     fs.readFile(pathFilename, 'utf8', (err, fileContent) => {
         if (err) {
             if (err.code !== 'ENOENT') {
+                console.log(`Error ENOENT: ${url}`)
                 return cb(err)
             }
 
             return downloadFromUrl(url, pathFilename, (err, requestContent) => {
+                console.log(`Downloading ${url}`)
                 if (err) {
+                    console.log(`Error Downloading ${url}`)
                     return cb(err)
                 }
-                spiderLinks(url, requestContent, nesting, cb)
+                spiderLinks(url, requestContent, nesting, queue)
+                return cb()
             })
         }
-
-        spiderLinks(url, fileContent, nesting, cb)
+        console.log(`File already downloaded: ${url}`)
+        spiderLinks(url, fileContent, nesting, queue)
+        return cb()
     })
 }
 
@@ -55,32 +66,19 @@ const downloadFromUrl = (url, filename, cb) => {
     })
 }
 
-const spiderLinks = (currentUrl, body, nesting, cb) => {
+const spiderLinks = (currentUrl, body, nesting, queue) => {
     if (nesting === 0) {
-        return process.nextTick(cb)
+        return
     }
 
     const links = getPageLinks(currentUrl, body)
-
     if (links.length === 0) {
-        return process.nextTick(cb)
-    }
+        return
+    } 
+    
+    console.log(`We have ${links.length} links`)
 
-    let completed = 0
-    let hasErrors = false
-
-    function done(err) {
-        if(err) {
-            hasErrors = true
-            return cb(err)
-        }
-
-        if(++completed === links.length && !hasErrors) {
-            return cb()
-        }
-    }
-
-    links.forEach(link => spider(link, nesting-1, done))
+    links.forEach(link => spider(link, nesting-1, queue))
 }
 
 
