@@ -5,14 +5,7 @@ import cheerio from 'cheerio'
 
 export function urlToFilename(url) {
     const parsedUrl = new URL(url)
-    const urlPath = parsedUrl.pathname.split('/')
-        .filter(component => {
-            component !== ''
-        })
-        .map(component => {
-            slug(component)
-        })
-        .join('/')
+    const urlPath = parsedUrl.pathname.split('/').join('_')
     let filename = path.join(parsedUrl.hostname, urlPath)
     if (!path.extname(filename).match(/htm/)) {
         filename += '.html'

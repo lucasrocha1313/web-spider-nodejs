@@ -1,79 +1,51 @@
-import fs from 'fs'
+import {promises as fsPromises} from 'fs'
 import path from 'path'
 import superagent from 'superagent'
 import mkdirp from 'mkdirp'
 import { urlToFilename, getPageLinks } from './utils.js'
 
-export function spider(url, nesting, cb) {
+export function spider(url, nesting) {
     const filename = urlToFilename(url)
     const pathFilename = './html-downloaded/' + filename
-    fs.readFile(pathFilename, 'utf8', (err, fileContent) => {
-        if (err) {
-            if (err.code !== 'ENOENT') {
-                return cb(err)
+    return fsPromises.readFile(pathFilename, 'utf8')
+        .catch(err => {
+            if(err.code !== 'ENOENT') {
+                throw err
             }
 
-            return downloadFromUrl(url, pathFilename, (err, requestContent) => {
-                if (err) {
-                    return cb(err)
-                }
-                spiderLinks(url, requestContent, nesting, cb)
-            })
-        }
-
-        spiderLinks(url, fileContent, nesting, cb)
-    })
-}
-
-const saveFile = (pathFilename, contents, cb) => {
-    mkdirp(path.dirname(pathFilename)).then(_ => {
-        fs.writeFile(pathFilename, contents, cb)
-    })
-}
-
-const downloadFromUrl = (url, filename, cb) => {
-    console.log(`Downloading ${url} into ${filename}`)
-    superagent.get(url).end((err, res) => {
-        if (err) {
-            return cb(err)
-        }
-
-        saveFile(filename, res.text, err => {
-            if (err) {
-                return cb(err)
-            }
-            console.log(`Downloaded and saved: ${url}`)
-            cb(null, res.text)
+            return downloadFromUrl(url, pathFilename)
         })
-    })
+        .then(content => spiderLinks(url, content, nesting))    
 }
 
-const spiderLinks = (currentUrl, body, nesting, cb) => {
+const downloadFromUrl = (url, filename) => {
+    console.log(`Downloading ${url} into ${filename}`)
+    let content
+
+    return superagent.get(url)
+        .then(res => {
+            content = res.text
+            return mkdirp(path.dirname(filename))
+        })
+        .then(() => fsPromises.writeFile(filename, content) )
+        .then(() => {
+            console.log(`Downloaded and saved:${url}`)
+            return content
+        })
+}
+
+const spiderLinks = (currentUrl, body, nesting) => {
+    let promise = Promise.resolve()
     if (nesting === 0) {
-        return process.nextTick(cb)
+        return promise
     }
 
     const links = getPageLinks(currentUrl, body)
-
-    if (links.length === 0) {
-        return process.nextTick(cb)
+    for (const link of links) {
+        promise = promise.then(() => spider(link, nesting - 1))
     }
 
-    function interate(index) {
-        if (index === links.length) {
-            return cb()
-        }
-
-        spider(links[index], nesting - 1, function (err) {
-            if (err) {
-                return cb(err)
-            }
-
-            interate(index + 1)
-        })
-    }
-
-    interate(0)
+    return promise    
 }
 
 
