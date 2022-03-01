@@ -3,19 +3,11 @@ import path from 'path'
 import superagent from 'superagent'
 import mkdirp from 'mkdirp'
 import { urlToFilename, getPageLinks } from './utils.js'
+import { TaskQueue } from './TaskQueue.js'
 
-export function spider(url, nesting) {
-    const filename = urlToFilename(url)
-    const pathFilename = './html-downloaded/' + filename
-    return fsPromises.readFile(pathFilename, 'utf8')
-        .catch(err => {
-            if(err.code !== 'ENOENT') {
-                throw err
-            }
-
-            return downloadFromUrl(url, pathFilename)
-        })
-        .then(content => spiderLinks(url, content, nesting))    
+export function spider(url, nesting, concurrency) {
+    const queue = new TaskQueue(concurrency)
+    return spiderTask(url, nesting, queue)
 }
 
 const downloadFromUrl = (url, filename) => {
@@ -34,18 +26,38 @@ const downloadFromUrl = (url, filename) => {
         })
 }
 
-const spiderLinks = (currentUrl, body, nesting) => {
-    let promise = Promise.resolve()
+const spiderLinks = (currentUrl, body, nesting, queue) => {
     if (nesting === 0) {
-        return promise
+        return Promise.resolve()
     }
 
     const links = getPageLinks(currentUrl, body)
-    for (const link of links) {
-        promise = promise.then(() => spider(link, nesting - 1))
-    }
+    const promises = links.map(link => spiderTask(link, nesting-1, queue))
 
-    return promise    
+    return Promise.all(promises)
+}
+
+const spidering = new Set()
+const spiderTask = (url, nesting, queue) => {
+    if(spidering.has(url)) {
+        return Promise.resolve()
+    }
+    spidering.add(url)
+
+    const filename = urlToFilename(url)
+    const pathFilename = './html-downloaded/' + filename
+    
+    return queue.runTask(() => {
+        return fsPromises.readFile(pathFilename, 'utf-8')
+            .catch(err => {
+                if(err.code !== 'ENOENT') {
+                    throw err
+                }
+    
+                return downloadFromUrl(url, pathFilename)
+            })
+            .then(content => spiderLinks(url, content, nesting, queue))
+    })
 }
 
 
