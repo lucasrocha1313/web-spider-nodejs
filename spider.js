@@ -1,32 +1,24 @@
 import {promises as fsPromises} from 'fs'
-import path from 'path'
+import {dirname} from 'path'
 import superagent from 'superagent'
 import mkdirp from 'mkdirp'
 import { urlToFilename, getPageLinks } from './utils.js'
 import { TaskQueue } from './TaskQueue.js'
 
-export function spider(url, nesting, concurrency) {
-    const queue = new TaskQueue(concurrency)
-    return spiderTask(url, nesting, queue)
+export async function spider(url, nesting, concurrency) {
+    return spiderTask(url, nesting, new TaskQueue(concurrency))
 }
 
-const downloadFromUrl = (url, filename) => {
+const downloadFromUrl = async (url, filename) => {
     console.log(`Downloading ${url} into ${filename}`)
-    let content
-
-    return superagent.get(url)
-        .then(res => {
-            content = res.text
-            return mkdirp(path.dirname(filename))
-        })
-        .then(() => fsPromises.writeFile(filename, content) )
-        .then(() => {
-            console.log(`Downloaded and saved:${url}`)
-            return content
-        })
+    const {text: content} = await superagent.get(url)
+    await mkdirp(dirname(filename))
+    await fsPromises.writeFile(filename, content)
+    console.log(`Downloaded and saved: ${url}`)
+    return content    
 }
 
-const spiderLinks = (currentUrl, body, nesting, queue) => {
+const spiderLinks = async (currentUrl, body, nesting, queue) => {
     if (nesting === 0) {
         return Promise.resolve()
     }
@@ -38,26 +30,28 @@ const spiderLinks = (currentUrl, body, nesting, queue) => {
 }
 
 const spidering = new Set()
-const spiderTask = (url, nesting, queue) => {
+const spiderTask = async (url, nesting, queue) => {
     if(spidering.has(url)) {
-        return Promise.resolve()
+        return
     }
     spidering.add(url)
 
     const filename = urlToFilename(url)
     const pathFilename = './html-downloaded/' + filename
-    
-    return queue.runTask(() => {
-        return fsPromises.readFile(pathFilename, 'utf-8')
-            .catch(err => {
-                if(err.code !== 'ENOENT') {
-                    throw err
-                }
-    
-                return downloadFromUrl(url, pathFilename)
-            })
-            .then(content => spiderLinks(url, content, nesting, queue))
+
+    const content = await queue.runTask(async () => {
+        try {
+            return await fsPromises.readFile(pathFilename, 'utf-8')
+        } catch (err) {
+            if(err.code !== 'ENOENT') {
+                throw err
+            }
+
+            return downloadFromUrl(url, pathFilename)
+        }
     })
+
+    return spiderLinks(url, content, nesting, queue)   
 }
 
 
